@@ -6,6 +6,7 @@ __pycache__/
 .Python
 env/
 venv/
+.venv/
 ENV/
 *.egg-info/
 dist/
@@ -18,19 +19,21 @@ build/
 .env
 *.env
 
-# 데이터 파일 (큰 파일 제외)
+# 데이터 파일
 processed/*.csv
 *.csv
 
 # IDE
 .vscode/
 .idea/
+.claude/
 *.swp
 *.swo
 
 # OS
 .DS_Store
 Thumbs.db
+nul
 
 # 로그
 *.log
@@ -42,3 +45,12 @@ Thumbs.db
 # 기타
 *.bak
 *.tmp
+
+# 정리 스크립트 (로컬 전용)
+cleanup_project.py
+
+# 오래된 폴더
+RAG1/
+Taviliy_Ingestion/
+chart_images/
+processed/

@@ -1,0 +1,19 @@
+# 카카오톡 챗봇 차트 시각화를 위한 필수 패키지
+
+# 기본 데이터 처리
+pandas>=2.0.0
+numpy>=1.24.0
+
+# 차트 생성
+matplotlib>=3.7.0
+mplfinance>=0.12.10b0
+
+# 웹 서버 (Flask)
+flask>=3.0.0
+flask-cors>=4.0.0
+
+# 기존 주식 데이터 수집 (이미 있는 것들)
+# FinanceDataReader
+# pykrx
+# requests
+# python-dotenv

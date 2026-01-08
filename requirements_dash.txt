@@ -1,0 +1,15 @@
+# Dash 웹 대시보드를 위한 필수 패키지
+
+# Dash 프레임워크
+dash>=2.14.0
+plotly>=5.17.0
+
+# 데이터 처리
+pandas>=2.0.0
+numpy>=1.24.0
+
+# 기존 패키지들 (이미 설치되어 있을 것)
+# FinanceDataReader
+# pykrx
+# requests
+# python-dotenv
