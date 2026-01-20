@@ -39,7 +39,7 @@ class HantuStock:
         self._api_key = api_key or os.getenv("KIS_APP_KEY", "").strip()
         self._secret_key = secret_key or os.getenv("KIS_APP_SECRET", "").strip()
         self._account_id = account_id or os.getenv("KIS_ACCOUNT_ID", "").strip()
-        self._account_suffix = os.getenv("KIS_ACCOUNT_SUFFIX", "01").s1trip() or "01"
+        self._account_suffix = os.getenv("KIS_ACCOUNT_SUFFIX", "01").strip() or "01"
 
         _env = (env or os.getenv("KIS_ENV", "prod")).strip().lower()
         if _env not in {"prod", "vps", "paper", "demo", "sandbox", "vts"}:
@@ -73,6 +73,7 @@ class HantuStock:
             "inquire-balance": "8434R",
             "order-buy": "0012U",
             "order-sell": "0011U",
+            "inquire-daily-ccld": "0081R",  # 주식일별주문체결조회 (3개월 이내)
         }
         return prefix + codes[key]
 
@@ -343,6 +344,186 @@ class HantuStock:
             return od, qty
         print(data.get("msg1"))
         return None, 0
+
+    # -------------------- 거래내역 조회 --------------------
+    def get_transaction_history(
+        self,
+        start_date: str = None,
+        end_date: str = None,
+        period: str = "1m",
+        sll_buy_dvsn: str = "00"
+    ) -> list:
+        """
+        주식일별주문체결조회 (기획 2-4: 거래 내역 리포트)
+
+        Args:
+            start_date: 조회시작일자 (YYYYMMDD), None이면 period로 계산
+            end_date: 조회종료일자 (YYYYMMDD), None이면 오늘
+            period: 기간 ("1m": 1개월, "3m": 3개월, "1y": 1년)
+            sll_buy_dvsn: 매도매수구분 ("00":전체, "01":매도, "02":매수)
+
+        Returns:
+            list[dict]: 거래내역 리스트
+                - ord_dt: 주문일자
+                - pdno: 종목코드
+                - prdt_name: 종목명
+                - sll_buy_dvsn_cd: 매도매수구분 (01:매도, 02:매수)
+                - sll_buy_dvsn_cd_name: 매도매수구분명
+                - ord_qty: 주문수량
+                - tot_ccld_qty: 총체결수량
+                - avg_prvs: 체결평균가
+                - tot_ccld_amt: 총체결금액
+        """
+        # 날짜 계산
+        today = datetime.now()
+        if end_date is None:
+            end_date = today.strftime("%Y%m%d")
+
+        if start_date is None:
+            period_map = {
+                "1m": relativedelta(months=1),
+                "3m": relativedelta(months=3),
+                "1y": relativedelta(years=1),
+            }
+            delta = period_map.get(period, relativedelta(months=1))
+            start_date = (today - delta).strftime("%Y%m%d")
+
+        headers = self._header(self._tr("inquire-daily-ccld"))
+        out = []
+        cont = True
+        fk100 = ""
+        nk100 = ""
+
+        while cont:
+            params = {
+                "CANO": self._account_id,
+                "ACNT_PRDT_CD": self._account_suffix,
+                "INQR_STRT_DT": start_date,
+                "INQR_END_DT": end_date,
+                "SLL_BUY_DVSN_CD": sll_buy_dvsn,
+                "INQR_DVSN": "00",
+                "PDNO": "",
+                "CCLD_DVSN": "00",
+                "ORD_GNO_BRNO": "",
+                "ODNO": "",
+                "INQR_DVSN_3": "00",
+                "INQR_DVSN_1": "",
+                "CTX_AREA_FK100": fk100,
+                "CTX_AREA_NK100": nk100,
+            }
+            url = self._base_url + "/uapi/domestic-stock/v1/trading/inquire-daily-ccld"
+            hd, res = self._request(url, headers, params)
+
+            if res.get("rt_cd") != "0":
+                print(f"[ERROR] get_transaction_history: {res.get('msg1')}")
+                break
+
+            cont = hd.get("tr_cont") in {"F", "M"}
+            headers["tr_cont"] = "N"
+            fk100 = res.get("ctx_area_fk100", "")
+            nk100 = res.get("ctx_area_nk100", "")
+            out += res.get("output1", [])
+
+        # 필요한 필드만 추출하여 정리
+        result = []
+        for r in out:
+            # 체결수량이 0인 건 제외 (미체결)
+            ccld_qty = int(r.get("tot_ccld_qty", 0))
+            if ccld_qty == 0:
+                continue
+
+            result.append({
+                "ord_dt": r.get("ord_dt", ""),
+                "pdno": r.get("pdno", ""),
+                "prdt_name": r.get("prdt_name", ""),
+                "sll_buy_dvsn_cd": r.get("sll_buy_dvsn_cd", ""),
+                "sll_buy_dvsn_cd_name": r.get("sll_buy_dvsn_cd_name", ""),
+                "ord_qty": int(r.get("ord_qty", 0)),
+                "tot_ccld_qty": ccld_qty,
+                "avg_prvs": float(r.get("avg_prvs", 0)),
+                "tot_ccld_amt": float(r.get("tot_ccld_amt", 0)),
+            })
+
+        return result
+
+    def get_transaction_summary(self, period: str = "1m") -> dict:
+        """
+        거래내역 요약 (기획 2-4, 2-6 지원)
+
+        Args:
+            period: 기간 ("1m": 1개월, "3m": 3개월, "1y": 1년)
+
+        Returns:
+            dict: 거래 요약 정보
+                - period: 조회기간
+                - total_buy_amount: 총 매수금액
+                - total_sell_amount: 총 매도금액
+                - total_trades: 총 거래건수
+                - buy_trades: 매수 거래건수
+                - sell_trades: 매도 거래건수
+                - by_stock: 종목별 거래 요약
+        """
+        transactions = self.get_transaction_history(period=period)
+
+        total_buy = 0
+        total_sell = 0
+        buy_count = 0
+        sell_count = 0
+        by_stock = {}
+
+        for t in transactions:
+            pdno = t["pdno"]
+            prdt_name = t["prdt_name"]
+            amt = t["tot_ccld_amt"]
+            qty = t["tot_ccld_qty"]
+            is_buy = t["sll_buy_dvsn_cd"] == "02"
+
+            if is_buy:
+                total_buy += amt
+                buy_count += 1
+            else:
+                total_sell += amt
+                sell_count += 1
+
+            # 종목별 집계
+            if pdno not in by_stock:
+                by_stock[pdno] = {
+                    "prdt_name": prdt_name,
+                    "buy_amount": 0,
+                    "sell_amount": 0,
+                    "buy_qty": 0,
+                    "sell_qty": 0,
+                    "trades": 0,
+                }
+
+            by_stock[pdno]["trades"] += 1
+            if is_buy:
+                by_stock[pdno]["buy_amount"] += amt
+                by_stock[pdno]["buy_qty"] += qty
+            else:
+                by_stock[pdno]["sell_amount"] += amt
+                by_stock[pdno]["sell_qty"] += qty
+
+        # 종목별 수익률 계산 (매도금액 - 매수금액)
+        for pdno, data in by_stock.items():
+            if data["buy_amount"] > 0:
+                profit = data["sell_amount"] - data["buy_amount"]
+                data["realized_profit"] = profit
+                data["profit_rate"] = round((profit / data["buy_amount"]) * 100, 2) if data["buy_amount"] > 0 else 0
+            else:
+                data["realized_profit"] = data["sell_amount"]
+                data["profit_rate"] = 0
+
+        return {
+            "period": period,
+            "total_buy_amount": total_buy,
+            "total_sell_amount": total_sell,
+            "net_amount": total_sell - total_buy,
+            "total_trades": len(transactions),
+            "buy_trades": buy_count,
+            "sell_trades": sell_count,
+            "by_stock": by_stock,
+        }
 
 
 if __name__ == "__main__":

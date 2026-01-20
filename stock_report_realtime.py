@@ -22,6 +22,7 @@ from dart_client import DartClient
 from metrics_calculator import MetricsCalculator
 from dart_financial_loader import DartFinancialLoader
 from report_formatter import ReportFormatter
+from tavily_search import TavilySearchClient
 import google.generativeai as genai
 
 
@@ -58,14 +59,26 @@ class RealtimeStockReportGenerator:
         # Gemini API (LLM)
         self.gemini_key = os.environ.get("GEMINI_API_KEY")
         genai.configure(api_key=self.gemini_key)
-        print("✅ Gemini API 초기화 완료\n")
+        print("✅ Gemini API 초기화 완료")
 
-    def generate_report(self, ticker: str) -> Dict:
+        # Tavily 웹 검색 (뉴스)
+        try:
+            self.tavily_client = TavilySearchClient()
+            self.tavily_available = True
+            print("✅ Tavily 웹 검색 초기화 완료\n")
+        except Exception as e:
+            print(f"⚠️  Tavily 초기화 실패: {e}")
+            self.tavily_client = None
+            self.tavily_available = False
+            print()
+
+    def generate_report(self, ticker: str, include_news: bool = False) -> Dict:
         """
         실시간 종목 리포트 생성
 
         Args:
             ticker: 종목 코드
+            include_news: 뉴스 포함 여부 (기본값: False)
 
         Returns:
             리포트 딕셔너리
@@ -108,12 +121,25 @@ class RealtimeStockReportGenerator:
                       f"PBR: {calculated_metrics.get('pbr', 'N/A')}배, "
                       f"ROE: {calculated_metrics.get('roe', 'N/A')}%\n")
 
+        # Step 2.7: 최신 뉴스 검색 (Tavily) - 옵션
+        news_data = None
+        if include_news and self.tavily_available:
+            print("[ Step 2.7 ] 최신 뉴스 검색 (Tavily)")
+            news_data = self._search_news(raw_data['basic']['name'], ticker)
+            if news_data and not news_data.get('error'):
+                news_count = len(news_data.get('news', {}).get('results', []))
+                analyst_count = len(news_data.get('analyst', {}).get('results', []))
+                print(f"✅ 뉴스 {news_count}건, 애널리스트 의견 {analyst_count}건 검색 완료\n")
+            else:
+                print("⚠️  뉴스 검색 결과 없음\n")
+
         # Step 3: LLM으로 리포트 생성
         print("[ Step 3 ] LLM 리포트 생성")
         report_content = self._generate_report_with_llm(
             ticker=ticker,
             raw_data=raw_data,
-            financial_data=financial_data
+            financial_data=financial_data,
+            news_data=news_data
         )
         print("✅ 리포트 생성 완료\n")
 
@@ -122,10 +148,12 @@ class RealtimeStockReportGenerator:
                 'ticker': ticker,
                 'company_name': raw_data['basic']['name'],
                 'generated_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-                'has_financials': financial_data is not None
+                'has_financials': financial_data is not None,
+                'has_news': news_data is not None and not news_data.get('error')
             },
             'report': report_content,
-            'raw_data': raw_data
+            'raw_data': raw_data,
+            'news_data': news_data
         }
 
     def _collect_quantitative_data(self, ticker: str) -> Dict:
@@ -138,12 +166,24 @@ class RealtimeStockReportGenerator:
             'financial_trend': self.stock_api.get_financial_trend(ticker)
         }
 
+    def _search_news(self, company_name: str, ticker: str) -> Optional[Dict]:
+        """Tavily를 사용하여 최신 뉴스 검색"""
+        if not self.tavily_client:
+            return None
+
+        try:
+            return self.tavily_client.get_comprehensive_info(company_name, ticker)
+        except Exception as e:
+            print(f"⚠️  뉴스 검색 오류: {e}")
+            return None
+
 
     def _generate_report_with_llm(
         self,
         ticker: str,
         raw_data: Dict,
-        financial_data: Optional[str]
+        financial_data: Optional[str],
+        news_data: Optional[Dict] = None
     ) -> Dict:
         """LLM으로 리포트 생성"""
 
@@ -151,6 +191,11 @@ class RealtimeStockReportGenerator:
         trend = raw_data['price_trend']
         metrics = raw_data['metrics']
         technical = raw_data['technical']
+
+        # 뉴스 데이터 포맷
+        news_section = ""
+        if news_data and self.tavily_client:
+            news_section = self.tavily_client.format_for_llm(news_data)
 
         # Prompt 생성
         prompt = f"""
@@ -184,6 +229,9 @@ class RealtimeStockReportGenerator:
 ### 5. 재무제표 데이터
 {financial_data if financial_data else "❌ 재무제표 데이터 없음"}
 
+### 6. 최신 뉴스 및 시장 동향
+{news_section if news_section else "❌ 뉴스 데이터 없음"}
+
 ---
 
 ## 📝 리포트 작성 요청
@@ -202,7 +250,10 @@ class RealtimeStockReportGenerator:
 ### [4. 밸류에이션]
 제공된 PER, PBR, ROE 지표를 바탕으로 현재 주가의 적정성을 평가하세요.
 
-### [5. 투자 의견]
+### [5. 시장 동향 및 뉴스 분석]
+{"최신 뉴스와 애널리스트 의견을 바탕으로 시장 반응과 향후 전망 분석" if news_section else "뉴스 데이터가 없어 생략"}
+
+### [6. 투자 의견]
 - 종합 투자 의견 (매수/보유/매도)
 - 목표주가 제시
 - 투자 리스크 요인
@@ -243,6 +294,7 @@ class RealtimeStockReportGenerator:
             'price_analysis': '',
             'financial_analysis': '',
             'valuation': '',
+            'news_analysis': '',
             'investment_opinion': ''
         }
 
@@ -256,6 +308,8 @@ class RealtimeStockReportGenerator:
             '주가 동향': 'price_analysis',
             '재무 상태': 'financial_analysis',
             '밸류에이션': 'valuation',
+            '시장 동향': 'news_analysis',
+            '뉴스 분석': 'news_analysis',
             '투자 의견': 'investment_opinion'
         }
 
