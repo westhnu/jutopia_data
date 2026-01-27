@@ -139,6 +139,147 @@ class HantuStock:
         return {}, {"rt_cd": "1", "msg1": "request failed after retries"}
 
     # -------------------- 시세 --------------------
+    def get_stock_price(self, ticker: str) -> dict:
+        """
+        주식 현재가 시세 조회 (PER, PBR 포함)
+
+        Args:
+            ticker: 종목코드 (6자리)
+
+        Returns:
+            dict: 현재가, 등락, PER, PBR, EPS, BPS 등
+        """
+        headers = self._header("FHKST01010100")
+        params = {
+            "fid_cond_mrkt_div_code": "J",
+            "fid_input_iscd": ticker,
+        }
+        url = self._base_url + "/uapi/domestic-stock/v1/quotations/inquire-price"
+        _, res = self._request(url, headers, params)
+
+        if res.get("rt_cd") != "0":
+            return {"error": res.get("msg1", "조회 실패")}
+
+        output = res.get("output", {})
+
+        return {
+            "ticker": ticker,
+            "name": output.get("hts_kor_isnm", ""),  # 종목명
+            "current_price": int(output.get("stck_prpr", 0)),  # 현재가
+            "price_change": int(output.get("prdy_vrss", 0)),  # 전일대비
+            "change_rate": float(output.get("prdy_ctrt", 0)),  # 전일대비율
+            "open": int(output.get("stck_oprc", 0)),  # 시가
+            "high": int(output.get("stck_hgpr", 0)),  # 고가
+            "low": int(output.get("stck_lwpr", 0)),  # 저가
+            "volume": int(output.get("acml_vol", 0)),  # 누적거래량
+            "trade_amount": int(output.get("acml_tr_pbmn", 0)),  # 누적거래대금
+            "per": float(output.get("per", 0)),  # PER
+            "pbr": float(output.get("pbr", 0)),  # PBR
+            "eps": float(output.get("eps", 0)),  # EPS
+            "bps": float(output.get("bps", 0)),  # BPS
+            "w52_high": int(output.get("stck_dryy_hgpr", 0)),  # 52주 최고가
+            "w52_low": int(output.get("stck_dryy_lwpr", 0)),  # 52주 최저가
+            "market_cap": int(output.get("hts_avls", 0)),  # 시가총액 (억)
+        }
+
+    def get_minute_chart(self, ticker: str, interval: int = 5) -> dict:
+        """
+        주식 분봉 조회 (당일 데이터)
+
+        Args:
+            ticker: 종목코드 (6자리)
+            interval: 분봉 간격 (1, 5, 10, 15, 30, 60분)
+
+        Returns:
+            dict: 분봉 OHLCV 데이터
+                - times: 시간 리스트 (HH:MM)
+                - open, high, low, close, volume: 가격/거래량 리스트
+        """
+        headers = self._header("FHKST03010200")
+
+        # 현재 시간 (장 마감 후면 15:30으로 설정)
+        now = datetime.now()
+        if now.hour >= 16 or (now.hour == 15 and now.minute > 30):
+            end_time = "153000"
+        else:
+            end_time = now.strftime("%H%M%S")
+
+        params = {
+            "fid_etc_cls_code": "",
+            "fid_cond_mrkt_div_code": "J",
+            "fid_input_iscd": ticker,
+            "fid_input_hour_1": end_time,
+            "fid_pw_data_incu_yn": "N",
+        }
+        url = self._base_url + "/uapi/domestic-stock/v1/quotations/inquire-time-itemchartprice"
+
+        all_data = []
+        for _ in range(10):  # 최대 10회 반복 (약 300개 데이터)
+            _, res = self._request(url, headers, params)
+
+            if res.get("rt_cd") != "0":
+                if not all_data:
+                    return {"error": res.get("msg1", "조회 실패")}
+                break
+
+            output2 = res.get("output2", [])
+            if not output2:
+                break
+
+            all_data.extend(output2)
+
+            # 다음 조회를 위해 마지막 시간 설정
+            last_time = output2[-1].get("stck_cntg_hour", "")
+            if not last_time or last_time <= "090000":
+                break
+            params["fid_input_hour_1"] = last_time
+
+        if not all_data:
+            return {"error": "분봉 데이터가 없습니다"}
+
+        # 데이터 정리 (시간순 정렬)
+        all_data.reverse()
+
+        # interval에 맞게 필터링 (5분봉이면 5분 단위만)
+        filtered = []
+        for item in all_data:
+            time_str = item.get("stck_cntg_hour", "")
+            if len(time_str) >= 4:
+                minute = int(time_str[2:4])
+                if minute % interval == 0:
+                    filtered.append(item)
+
+        times = []
+        opens = []
+        highs = []
+        lows = []
+        closes = []
+        volumes = []
+
+        for item in filtered:
+            time_str = item.get("stck_cntg_hour", "")
+            if len(time_str) >= 4:
+                times.append(f"{time_str[:2]}:{time_str[2:4]}")
+            opens.append(int(item.get("stck_oprc", 0)))
+            highs.append(int(item.get("stck_hgpr", 0)))
+            lows.append(int(item.get("stck_lwpr", 0)))
+            closes.append(int(item.get("stck_prpr", 0)))
+            volumes.append(int(item.get("cntg_vol", 0)))
+
+        return {
+            "ticker": ticker,
+            "interval": interval,
+            "count": len(times),
+            "data": {
+                "times": times,
+                "open": opens,
+                "high": highs,
+                "low": lows,
+                "close": closes,
+                "volume": volumes
+            }
+        }
+
     @staticmethod
     def get_past_data(ticker: str, days: int = 100):
         if fdr is None:

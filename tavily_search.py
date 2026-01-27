@@ -146,7 +146,7 @@ class TavilySearchClient:
         try:
             response = self.client.search(
                 query=query,
-                search_depth="advanced",
+                search_depth="basic",  # 비용 절감 (advanced → basic)
                 max_results=max_results,
                 include_answer=True
             )
