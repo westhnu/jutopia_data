@@ -575,52 +575,7 @@ GET /api/web/averaging/history/{symbol}?limit=10
 
 ---
 
-## 13. 테스트
-
-### 13.1 단위 테스트
-
-```bash
-# 모듈 테스트
-python stock_averaging_data.py
-```
-
-### 13.2 통합 테스트
-
-```python
-def test_full_flow():
-    provider = StockAveragingDataProvider()
-
-    # 1. 보유 종목 확인
-    holding = provider.get_holding_info("005930")
-    assert holding["is_holding"] == True
-
-    # 2. 수량 기준 계산
-    result = provider.calculate_by_quantity(
-        symbol="005930",
-        additional_price=70000,
-        additional_quantity=10
-    )
-    assert "new_avg_price" in result["result"]
-
-    # 3. 저장
-    saved = provider.save_calculation(
-        symbol="005930",
-        calculation_result=result
-    )
-    assert "calculation_id" in saved
-
-    # 4. 히스토리 조회
-    history = provider.get_calculation_history("005930")
-    assert len(history["calculations"]) > 0
-
-    print("✅ 통합 테스트 통과")
-
-test_full_flow()
-```
-
----
-
-## 14. 배포 체크리스트
+## 13. 배포 체크리스트
 
 - [ ] .env에 KIS API 키 설정
 - [ ] averaging_history 디렉토리 생성 권한
@@ -631,7 +586,7 @@ test_full_flow()
 
 ---
 
-## 15. 참고 문서
+## 14. 참고 문서
 
 - [averaging_calculator.py](../averaging_calculator.py) - 계산 로직 소스코드
 - [HantuStock.py](../HantuStock.py) - KIS API 클라이언트

@@ -417,88 +417,23 @@ if "error" in community:
 
 ---
 
-## 11. 테스트
-
-### 11.1 단위 테스트
-
-```bash
-# 모듈 테스트
-python chatbot_news_community.py
-```
-
-**출력 예시:**
-```
-====================================
-Chatbot_05 뉴스/커뮤니티 테스트
-====================================
-
-[1단계] 커뮤니티 요약
-----------------------------------------
-감정 톤: 긍정 😊
-요약: 전반적으로 긍정적인 의견이 많아요
-• 실적 개선 기대감이 주요 이유예요
-대표 의견:
-  - 실적 바닥은 지난 것 같다
-  - 외국인 수급이 계속 유입 중
-
-[2단계] 뉴스 요약
-----------------------------------------
-핵심 이슈 3건:
-  [HIGH] 2분기 실적이 시장 예상치를 상회했어요
-  [MEDIUM] 반도체 업황 회복 기대가 언급되고 있어요
-  [HIGH] 목표주가 20만원 유지
-
-✅ 테스트 완료
-```
-
-### 11.2 통합 테스트
-
-```python
-# 챗봇 플로우 전체 테스트
-def test_full_flow():
-    chatbot = ChatbotNewsCommunity()
-
-    # 1. 커뮤니티
-    community = chatbot.get_community_summary("005930", "삼성전자")
-    assert "sentiment_tone" in community
-    assert len(community.get("key_opinions", [])) <= 3
-
-    # 2. 뉴스
-    news = chatbot.get_news_summary("005930", "삼성전자")
-    assert len(news.get("key_issues", [])) >= 3
-    assert len(news.get("key_issues", [])) <= 5
-
-    # 3. 카카오톡 형식
-    kakao_comm = chatbot.format_community_for_kakao(community)
-    assert kakao_comm["version"] == "2.0"
-    assert len(kakao_comm["template"]["outputs"]) == 2  # 2개 메시지
-
-    print("✅ 통합 테스트 통과")
-
-test_full_flow()
-```
-
----
-
-## 12. 배포 체크리스트
+## 11. 배포 체크리스트
 
 - [ ] `.env` 파일에 API 키 설정 (TAVILY_API_KEY, GEMINI_API_KEY)
 - [ ] 필수 패키지 설치 (`tavily-python`, `google-generativeai`)
 - [ ] 카카오톡 블록 ID 수정 (`news_block`, `select_stock_block`, `main_block`)
 - [ ] 캐싱 구현 (커뮤니티 30초, 뉴스 5분)
 - [ ] 에러 핸들링 테스트
-- [ ] 단위 테스트 통과
-- [ ] 통합 테스트 통과
 
 ---
 
-## 13. 문의
+## 12. 문의
 
 데이터 관련 문의사항은 데이터 파트로 연락 바랍니다.
 
 ---
 
-## 14. 참고 문서
+## 13. 참고 문서
 
 - [docs/chatbot_specification.md](chatbot_specification.md) - 챗봇 전체 기획
 - [docs/backend_data_guide_web02.md](backend_data_guide_web02.md) - Web_02 뉴스/커뮤니티 API
