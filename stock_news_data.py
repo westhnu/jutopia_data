@@ -155,7 +155,7 @@ class StockNewsDataProvider:
 투자 관련 뉴스 번호 (쉼표로 구분):
 """
         try:
-            model = self.genai.GenerativeModel('gemini-2.0-flash')
+            model = self.genai.GenerativeModel('gemini-2.5-flash')
             response = model.generate_content(prompt)
 
             # 응답 파싱 (예: "1, 3, 5")
@@ -295,7 +295,7 @@ class StockNewsDataProvider:
 - 투자 관련 핵심 내용 유지
 """
         try:
-            model = self.genai.GenerativeModel('gemini-2.0-flash')
+            model = self.genai.GenerativeModel('gemini-2.5-flash')
             response = model.generate_content(prompt)
             return response.text.strip()
         except Exception as e:

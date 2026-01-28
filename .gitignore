@@ -54,3 +54,10 @@ RAG1/
 Taviliy_Ingestion/
 chart_images/
 processed/
+
+# Node.js
+node_modules/
+package-lock.json
+
+# Test files
+test_env.py
