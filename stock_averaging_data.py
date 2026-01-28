@@ -454,7 +454,7 @@ class StockAveragingDataProvider:
 
     def _get_company_name(self, symbol: str) -> str:
         """
-        종목명 조회 (간단한 매핑)
+        종목명 조회 (HantuStock API 활용)
 
         Args:
             symbol: 종목 코드
@@ -462,20 +462,14 @@ class StockAveragingDataProvider:
         Returns:
             종목명
         """
-        # 간단한 매핑 (실제로는 DB나 API에서 조회)
-        company_map = {
-            "005930": "삼성전자",
-            "000660": "SK하이닉스",
-            "035420": "NAVER",
-            "051910": "LG화학",
-            "006400": "삼성SDI",
-            "035720": "카카오",
-            "207940": "삼성바이오로직스",
-            "068270": "셀트리온",
-            "005380": "현대차",
-            "012330": "현대모비스"
-        }
-        return company_map.get(symbol, "알 수 없는 종목")
+        try:
+            price_info = self.hantu.get_stock_price(symbol)
+            if "error" in price_info:
+                return symbol
+            return price_info.get("name", symbol)
+        except Exception as e:
+            print(f"종목명 조회 실패 ({symbol}): {e}")
+            return symbol
 
 
 # 테스트 코드
